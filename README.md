@@ -1,4 +1,4 @@
-# [Project Name: AI-Powered Delivery Health & Operations Intelligence System]
+# AI-Powered Delivery Health & Operations Intelligence System]
 
 ![AI-Powered Delivery Health & Operations Intelligence System](crebos%20banner.png)
 
