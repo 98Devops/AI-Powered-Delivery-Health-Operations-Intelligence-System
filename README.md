@@ -26,3 +26,5 @@ The pipeline consists of **25+ n8n nodes**, organized into three core operationa
 3.  **Phase III: Notifications & Completion:**Alert Routing (Status Alert vs. Manual Review) -> Gmail Notification -> Manual Task Creation -> End-to-End Log.
 
 ---
+
+## This repo contains the System Documenation and the n8n workflow in json 
