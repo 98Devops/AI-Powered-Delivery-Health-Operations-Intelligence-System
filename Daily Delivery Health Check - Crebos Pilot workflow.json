@@ -53,7 +53,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "=https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=AIzaSyA4tXKCrQjBInAa3tgvV_inwWXabAGnezY",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ { contents: [ { parts: [ { text: \"You are a project health analyst. Analyze this project and provide actionable insights in JSON format ONLY.\\n\\nProject: \" + $json.projectName + \"\\nCompletion: \" + $json.completion + \"%\\nOverdue Tasks: \" + $json.overdue + \"\\nBlockers: \" + ($json.blockers || \"None\") + \"\\nMy Assessment: Status is \" + $json.systemStatus + \" with score \" + $json.score + \"/100\\n\\nRESPOND WITH ONLY THIS JSON (no markdown, no extra text):\\n{\\n  \\\"aiStatus\\\": \\\"RED\\\" or \\\"YELLOW\\\" or \\\"GREEN\\\",\\n  \\\"isValid\\\": true or false,\\n  \\\"keyIssues\\\": \\\"2-3 key problems (2 sentences max)\\\",\\n  \\\"risks\\\": \\\"What happens if not fixed (2 sentences max)\\\",\\n  \\\"recommendedActions\\\": \\\"Specific next steps (2-3 actions)\\\"\\n}\\n\\nRules:\\n- aiStatus should match my assessment (\" + $json.systemStatus + \")\\n- isValid: true if you agree, false if you see different issues\\n- Be concise and actionable\\n- Return ONLY valid JSON, nothing else\" } ] } ], generationConfig: { temperature: 0.3, maxOutputTokens: 1024 } } }}",
