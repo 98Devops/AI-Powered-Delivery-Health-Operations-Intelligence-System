@@ -1,0 +1,836 @@
+{
+  "name": "Daily Delivery Health Check - Crebos Pilot",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        960,
+        -1072
+      ],
+      "id": "3f10cc70-9723-4675-928e-0feff0cb5323",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "team": "90121382195",
+        "space": "=90121382195",
+        "folder": "=",
+        "list": "=901214616677",
+        "returnAll": false,
+        "filters": {}
+      },
+      "type": "n8n-nodes-base.clickUp",
+      "typeVersion": 1,
+      "position": [
+        544,
+        -896
+      ],
+      "id": "07eb0e44-5b44-4c3b-acac-08149feed0d0",
+      "name": "Get many tasks",
+      "credentials": {
+        "clickUpApi": {
+          "id": "03MZq7wQ44XWt8zf",
+          "name": "ClickUp account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// DYNAMIC FIELD EXTRACTION + SCORING + CLEAN OUTPUT\nconst items = $input.all();\n\nreturn items.map(item => {\n  const task = item.json;\n  const cf = task.custom_fields || [];\n\n  // Helper: Find field by partial name\n  const findField = (name) =>\n    cf.find(f => f.name && f.name.toLowerCase().includes(name.toLowerCase()));\n\n  // Dynamic lookup\n  const scoreField = findField(\"score\");\n  const statusField = findField(\"status\");\n  const aiValidField = findField(\"valid\");\n  const lastCheckedField = findField(\"checked\");\n  const recField = findField(\"recommendation\");\n  const issueField = findField(\"issues\");\n\n  // Dynamic dropdown options\n  const getOptionId = (field, optionName) => {\n    if (!field?.type_config?.options) return null;\n    const o = field.type_config.options\n      .find(opt => opt.name.toLowerCase() === optionName.toLowerCase());\n    return o?.id || null;\n  };\n\n  const f = {\n    score: scoreField?.id || null,\n    statusColor: statusField?.id || null,\n    aiValid: aiValidField?.id || null,\n    lastChecked: lastCheckedField?.id || null,\n    aiRecommendation: recField?.id || null,\n    aiKeyIssues: issueField?.id || null,\n\n    redId: getOptionId(statusField, \"red\"),\n    yellowId: getOptionId(statusField, \"yellow\"),\n    greenId: getOptionId(statusField, \"green\"),\n\n    aiValidYesId: getOptionId(aiValidField, \"true\") || getOptionId(aiValidField, \"yes\"),\n    aiValidNoId: getOptionId(aiValidField, \"false\") || getOptionId(aiValidField, \"no\"),\n  };\n\n  // Extract metrics\n  const completionField = findField(\"completion\");\n  const overdueField = findField(\"overdue\");\n  const blockersField = findField(\"blocker\");\n\n  const completion = Number(completionField?.value || 0);\n  const overdue = Number(overdueField?.value || 0);\n  const blockersText = blockersField?.value || \"\";\n  const blockerCount = blockersText ? blockersText.split(\",\").filter(b => b.trim()).length : 0;\n\n  // Scoring\n  let systemStatus = \"GREEN\";\n  let score = 90;\n\n  if (completion < 50 || overdue > 3 || blockerCount > 1) {\n    systemStatus = \"RED\";\n    score = 25;\n  } else if (completion < 80 || overdue >= 1 || blockerCount === 1) {\n    systemStatus = \"YELLOW\";\n    score = 60;\n  }\n\n  return {\n    json: {\n      taskId: task.id,\n      projectName: task.name,\n      completion,\n      overdue,\n      blockers: blockersText,\n      blockerCount,\n      systemStatus,\n      score,\n      fieldIds: f\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        176,
+        -672
+      ],
+      "id": "c73a58f9-00db-42e7-8542-9717f81c4596",
+      "name": "Normalize & UTC Handling"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=AIzaSyA4tXKCrQjBInAa3tgvV_inwWXabAGnezY",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { contents: [ { parts: [ { text: \"You are a project health analyst. Analyze this project and provide actionable insights in JSON format ONLY.\\n\\nProject: \" + $json.projectName + \"\\nCompletion: \" + $json.completion + \"%\\nOverdue Tasks: \" + $json.overdue + \"\\nBlockers: \" + ($json.blockers || \"None\") + \"\\nMy Assessment: Status is \" + $json.systemStatus + \" with score \" + $json.score + \"/100\\n\\nRESPOND WITH ONLY THIS JSON (no markdown, no extra text):\\n{\\n  \\\"aiStatus\\\": \\\"RED\\\" or \\\"YELLOW\\\" or \\\"GREEN\\\",\\n  \\\"isValid\\\": true or false,\\n  \\\"keyIssues\\\": \\\"2-3 key problems (2 sentences max)\\\",\\n  \\\"risks\\\": \\\"What happens if not fixed (2 sentences max)\\\",\\n  \\\"recommendedActions\\\": \\\"Specific next steps (2-3 actions)\\\"\\n}\\n\\nRules:\\n- aiStatus should match my assessment (\" + $json.systemStatus + \")\\n- isValid: true if you agree, false if you see different issues\\n- Be concise and actionable\\n- Return ONLY valid JSON, nothing else\" } ] } ], generationConfig: { temperature: 0.3, maxOutputTokens: 1024 } } }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        32,
+        -400
+      ],
+      "id": "6cf465ab-f3c9-4029-879d-c8f97992c520",
+      "name": "AI HTTP Call"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nreturn items.map(item => {\n  const out = {\n    aiStatus: \"UNKNOWN\",\n    aiValid: false,\n    aiKeyIssues: \"\",\n    risks: \"\",\n    recommendedActions: \"\",\n    aiError: null\n  };\n\n  let text;\n  try {\n    text = item.json.candidates[0].content.parts[0].text;\n  } catch {\n    out.aiError = \"Failed to extract text\";\n    return { json: out };\n  }\n\n  try {\n    const cleaned = text.replace(/```json|```/g, \"\").trim();\n    const data = JSON.parse(cleaned);\n\n    out.aiStatus = data.aiStatus;\n    out.aiValid = data.isValid;\n    out.aiKeyIssues = data.keyIssues;\n    out.risks = data.risks;\n    \n    // Handle recommendedActions as array or string\n    if (Array.isArray(data.recommendedActions)) {\n      out.recommendedActions = data.recommendedActions.join(\"\\n\");\n    } else {\n      out.recommendedActions = data.recommendedActions || \"\";\n    }\n\n  } catch (e) {\n    out.aiError = \"AI returned invalid JSON: \" + e.message;\n  }\n\n  return { json: out };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        256,
+        -400
+      ],
+      "id": "a27f2357-cefa-48f1-8a03-1aced1a3eada",
+      "name": "AI Response Validator"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {
+          "includeUnpaired": false
+        }
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        432,
+        -560
+      ],
+      "id": "77a59156-36e8-4c76-bede-bba839ea02c9",
+      "name": "Merge metadata and AI validation"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst out = [];\n\nfor (const item of items) {\n  const d = item.json;\n  const f = d.fieldIds;\n\n  if (!f || !f.score) continue;\n\n  const statusOption = {\n    RED: f.redId,\n    YELLOW: f.yellowId,\n    GREEN: f.greenId\n  }[d.systemStatus];\n\n  const validOption = d.aiValid ? f.aiValidYesId : f.aiValidNoId;\n\n  const updates = [\n    { id: f.score, val: d.score },\n    { id: f.statusColor, val: statusOption },\n    { id: f.lastChecked, val: Date.now() },\n    { id: f.aiValid, val: validOption },\n    { id: f.aiRecommendation, val: d.recommendedActions || \"\" },\n    { id: f.aiKeyIssues, val: d.aiKeyIssues || \"\" }\n  ];\n\n  for (const u of updates) {\n    if (u.id && u.val !== null && u.val !== undefined) {\n      out.push({\n        json: {\n          taskId: d.taskId,\n          fieldId: u.id,\n          value: u.val\n        }\n      });\n    }\n  }\n}\n\nreturn out;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        608,
+        -512
+      ],
+      "id": "7cfd2db9-7a9a-41e5-b334-6a260b21572e",
+      "name": "Prepare ClickUp Payload"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1040,
+        -512
+      ],
+      "id": "9371a0d2-1f0f-4d10-960b-d9be6a4ecd68",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "team": "=90121382195",
+        "space": "=90125875057",
+        "folder": "=90128594192",
+        "list": "=901214616677",
+        "filters": {}
+      },
+      "type": "n8n-nodes-base.clickUp",
+      "typeVersion": 1,
+      "position": [
+        1904,
+        -512
+      ],
+      "id": "6213178f-70ad-46f7-92b0-135b3734f4fe",
+      "name": "Get many tasks1",
+      "credentials": {
+        "clickUpApi": {
+          "id": "03MZq7wQ44XWt8zf",
+          "name": "ClickUp account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// CORRECTED: Maps dropdown option indices back to names\nconst items = $input.all();\nconst output = [];\n\n// Map dropdown indices to values\nconst statusColorMap = { 0: \"Green\", 1: \"Yellow\", 2: \"Red\" };\nconst aiValidMap = { 0: \"Yes\", 1: \"No\" };\n\nfor (const item of items) {\n  const task = item.json;\n  \n  // Helper: get custom field value AND handle both formats\n  const getField = (name) => {\n    const field = task.custom_fields?.find(f => \n      f.name.toLowerCase().includes(name.toLowerCase())\n    );\n    \n    // Handle both string and numeric values\n    if (!field) return \"\";\n    if (typeof field.value === \"number\") return field.value.toString();\n    return field.value || \"\";\n  };\n  \n  // Extract fields\n  const scoreRaw = getField(\"Score\");\n  const statusColorRaw = getField(\"Status Color\");\n  const aiValidRaw = getField(\"AI Valid\");\n  const aiKeyIssues = getField(\"Key Issues\");\n  const aiRecommendation = getField(\"Recommendation\");\n  const completion = getField(\"Completion %\");\n  const overdue = getField(\"Overdue Tasks\");\n  const blockers = getField(\"Blockers\");\n  \n  // Convert numeric dropdown values to names\n  const score = Number(scoreRaw) || 0;\n  const statusColor = statusColorMap[Number(statusColorRaw)] || \"UNKNOWN\";\n  const aiValid = aiValidMap[Number(aiValidRaw)] || \"Unknown\";\n  \n  // Determine notification type\n  let notificationType = \"NONE\";\n  \n  // RED or YELLOW always need alerts\n  if (statusColor === \"Red\" || statusColor === \"Yellow\") {\n    notificationType = \"STATUS_ALERT\";\n  }\n  \n  // GREEN projects with no AI data need manual review\n  if (statusColor === \"Green\" && !aiKeyIssues && !aiRecommendation) {\n    notificationType = \"MANUAL_REVIEW\";\n  }\n  \n  const manualReviewDescription = \n    `⚠️ MANUAL REVIEW REQUIRED\\n\\nProject: ${task.name}\\nStatus: ${statusColor}\\nScore: ${score}/100\\nCompletion: ${completion}%\\nOverdue: ${overdue}\\nBlockers: ${blockers || \"None\"}\\n\\nAI Assessment:\\n${aiKeyIssues}\\n\\nRecommended Actions:\\n${aiRecommendation}`;\n\n  const statusAlertDescription =\n    `🔔 PROJECT STATUS ALERT\\n\\nProject: ${task.name}\\nStatus: ${statusColor}\\nScore: ${score}/100\\n\\nIssues:\\n${aiKeyIssues}\\n\\nNext Steps:\\n${aiRecommendation}`;\n  \n  output.push({\n    json: {\n      taskId: task.id,\n      taskName: task.name,\n      taskUrl: task.url,\n      systemStatus: statusColor,\n      statusColor: statusColor,\n      score: score,\n      completion: completion,\n      overdue: overdue,\n      blockers: blockers,\n      aiValid: aiValid,\n      aiKeyIssues: aiKeyIssues,\n      aiRecommendation: aiRecommendation,\n      notificationType: notificationType,\n      manualReviewDescription: manualReviewDescription,\n      statusAlertDescription: statusAlertDescription\n    }\n  });\n}\n\nreturn output;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1728,
+        -976
+      ],
+      "id": "5687c642-8854-447b-94a1-4da1d9a92c8b",
+      "name": "Manual Review Detection"
+    },
+    {
+      "parameters": {
+        "team": "90121382195",
+        "space": "90125875057",
+        "folder": "90128594192",
+        "list": "901214619157",
+        "name": "==🚨 MANUAL REVIEW: {{ $json.manualReviewCount || 0 }} Project(s) Flagged",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.clickUp",
+      "typeVersion": 1,
+      "position": [
+        2960,
+        -992
+      ],
+      "id": "ef62e5e8-4c67-4298-ab21-44c8f4faf4da",
+      "name": "Create a task",
+      "credentials": {
+        "clickUpApi": {
+          "id": "03MZq7wQ44XWt8zf",
+          "name": "ClickUp account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "tafyhwh@gmail.com",
+        "subject": "=🚨 ACTION REQUIRED: {{ $json.manualReviewCount }} Project(s) Flagged for Manual Review",
+        "emailType": "text",
+        "message": "=ACTION REQUIRED: Project(s) Flagged for Manual Review\n\nManual Review Required – Action Needed\n\nThe following **{{ $item(\"Manual review routing\").$json.manualReviewCount }}** project(s) require human intervention:\n\n{{ $item(\"Manual review routing\").$json.manualReviews.map(t => \n  `• ${t.taskName}\n   Status: ${t.statusColor}\n   Score: ${t.score}/100\n   \n   Reason for Flag: ${t.aiKeyIssues}\n   \n   Action Required: Please review this project and update the AI fields manually.\n   Link: ${t.taskUrl}`\n).join(\"\\n\\n\") }}\n\n---\nThese items were flagged as requiring human oversight. A Master Review task has been created in the Manual Review list for follow-up.",
+        "options": {
+          "senderName": "Ops team"
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        2896,
+        -480
+      ],
+      "id": "42867226-4297-4d64-9be9-e7a9a9c0c441",
+      "name": "Manual Review Email",
+      "webhookId": "1831727a-464f-42b2-a91b-6a415cf353b6",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "acDD4bI2afAz3mf8",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "88f4db28-2208-4689-8009-4605a03efe6b",
+              "leftValue": "={{ $json.manualReviewCount }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2720,
+        -976
+      ],
+      "id": "3b7c8c59-a7f6-46f2-9c55-81cfbc0fca39",
+      "name": "Manual review routing"
+    },
+    {
+      "parameters": {
+        "sendTo": "tafyhwh@gmail.com",
+        "subject": "={{ $json.statusAlertCount }} Project Health Alert(s) Detected",
+        "emailType": "text",
+        "message": "=Daily Delivery Health Check – Status Alerts\n\nThe system detected {{ $json.statusAlertCount }} project(s) with issues:\n\n{{ $json.statusAlerts.map(t => \n  `• ${t.taskName} (${t.statusColor})\n   Score: ${t.score}/100\n   Blockers: ${t.blockers || \"None\"}\n   \n   🔍 Key Issues:\n   ${t.aiKeyIssues}\n   \n   ⚠️ Recommended Actions:\n   ${t.aiRecommendation}\n   \n   Link: ${t.taskUrl}`\n).join(\"\\n\\n\") }}\n\nThis is an automated update from your Delivery Health System.\n\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        2656,
+        -480
+      ],
+      "id": "a246bbd1-dc56-44de-b670-a3028cb59606",
+      "name": "Status alert",
+      "webhookId": "f3cf0afe-85a3-433f-8f80-49846fb9c260",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "acDD4bI2afAz3mf8",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "numberInputs": 3
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        2752,
+        -752
+      ],
+      "id": "62c48b11-051e-4e9b-b565-7bd5c873c4dd",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "amount": 3
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1664,
+        -528
+      ],
+      "id": "854e1d59-ad0e-48bc-acd7-a4e0b13d8f66",
+      "name": "Wait",
+      "webhookId": "cb9b16b7-4173-4bbe-a30b-d578c2ee5816"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1472,
+        -512
+      ],
+      "id": "58c1d079-71ff-4e04-9c1a-07d05a46f132",
+      "name": "Loop Over Items1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "abe4aa3f-60a3-41b6-a58b-02c1f3280079",
+              "leftValue": "=={{ $json.fieldId }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "5591e0fa-4b71-44fc-94f3-b4720dcbd0e3",
+              "leftValue": "=={{ $json.value }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [
+        832,
+        -512
+      ],
+      "id": "63f07736-8437-4926-97aa-01dd4ba3493d",
+      "name": "Filter"
+    },
+    {
+      "parameters": {
+        "operation": "setCustomField",
+        "task": "={{ $json.taskId }}",
+        "field": "={{ $json.fieldId }}",
+        "value": "={{ $json.value }}"
+      },
+      "type": "n8n-nodes-base.clickUp",
+      "typeVersion": 1,
+      "position": [
+        1280,
+        -512
+      ],
+      "id": "f1776e7d-63da-4dac-9257-ec3b4e227aa5",
+      "name": "Set a custom Field on a task",
+      "credentials": {
+        "clickUpApi": {
+          "id": "03MZq7wQ44XWt8zf",
+          "name": "ClickUp account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "f808d2e5-38c7-42be-ba86-cc2bd185b2ab",
+              "leftValue": "={{$json.statusAlertCount}}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2176,
+        -736
+      ],
+      "id": "56fd27a7-9d81-4fca-b80a-4e0379d29da1",
+      "name": "STATUS ALERT"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        2528,
+        -720
+      ],
+      "id": "4a526eae-6439-4803-b335-7c0e77deb6cc",
+      "name": "No Operation, do nothing"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate Alerts (dedupe + flatten)\n// Input: array of items where each item MAY have:\n//   - taskId\n//   - taskName/projectName\n//   - systemStatus (RED/YELLOW/GREEN)\n//   - notificationType: 'STATUS_ALERT' or 'MANUAL_REVIEW'\n// Output: ONE item with arrays { statusAlerts, manualReviews }\n\nconst items = $input.all();\n\n// helper to avoid undefined explosions\nconst get = (obj, ...keys) => {\n  for (const k of keys) {\n    if (!obj || typeof obj !== 'object') return undefined;\n    obj = obj[k];\n  }\n  return obj;\n};\n\n// dedupe maps\nconst seenStatus = new Map();\nconst seenManual = new Map();\n\n// normalize a task into safe minimal fields\nconst normalizeTask = (t) => ({\n  taskId: t.taskId || t.id || get(t, 'id') || null,\n  taskName: t.projectName || t.name || t.taskName || 'Unknown',\n  score: t.score ?? t.systemScore ?? null,\n  status: t.systemStatus || t.status || t.aiStatus || 'UNKNOWN',\n  url: t.url || (t.taskId ? `https://app.clickup.com/t/${t.taskId}` : null),\n  blockers: t.blockers || \"\",\n  recommendedActions: t.recommendedActions || t.aiRecommendation || \"\"\n});\n\n// classification loop\nfor (const item of items) {\n  const t = item.json;\n  if (!t) continue;\n\n  const nt = (t.notificationType || '').toUpperCase().trim();\n  const ntask = normalizeTask(t);\n\n  if (!ntask.taskId) continue;\n\n  // status alerts: RED or YELLOW or explicitly tagged\n  const sys = (ntask.status || '').toUpperCase();\n  if (nt === 'STATUS_ALERT' || nt === 'STATUS' || sys === 'RED' || sys === 'YELLOW') {\n    if (!seenStatus.has(ntask.taskId)) seenStatus.set(ntask.taskId, ntask);\n  }\n\n  // manual review\n  if (nt === 'MANUAL_REVIEW' || nt === 'MANUAL') {\n    if (!seenManual.has(ntask.taskId)) seenManual.set(ntask.taskId, ntask);\n  }\n}\n\n// output = one single item\nconst statusAlerts = Array.from(seenStatus.values());\nconst manualReviews = Array.from(seenManual.values());\n\nreturn [\n  {\n    json: {\n      statusAlerts,\n      manualReviews,\n      statusAlertCount: statusAlerts.length,\n      manualReviewCount: manualReviews.length\n    }\n  }\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1968,
+        -976
+      ],
+      "id": "2beded8a-cea7-4524-9825-a05e9e56716d",
+      "name": "Aggregate Alerts"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\n\n// Transform your existing structure to what the email template expects\nconst transformed = data.statusAlerts.map(t => {\n  return {\n    taskName: t.taskName,\n    statusColor: t.status,             // status → statusColor\n    score: t.score,\n    blockers: t.blockers || \"None\",\n    aiKeyIssues: t.blockers || \"None\", // If you have real AI key issues elsewhere, map them here\n    aiRecommendation: t.recommendedActions || \"No recommendations\",\n    taskUrl: t.url                     // url → taskUrl\n  };\n});\n\nreturn [{\n  json: {\n    statusAlertCount: transformed.length,\n    statusAlerts: transformed\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2224,
+        -480
+      ],
+      "id": "6d63e03e-c70d-4b33-a187-ff281f0ee2e3",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\n\n// Output ONE single item containing both arrays\nreturn [\n  { \n    json: { \n      statusAlerts: data.statusAlerts, \n      statusAlertCount: data.statusAlertCount,\n      manualReviews: data.manualReviews, \n      manualReviewCount: data.manualReviewCount \n    } \n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2240,
+        -976
+      ],
+      "id": "a11d7b45-e9b7-4d47-a0d2-65cd685198aa",
+      "name": "Split Alerts vs Manual Reviews"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\n\nreturn [{\n  json: {\n    statusAlerts: item.statusAlerts,\n    statusAlertCount: item.statusAlertCount,\n    taskIdForComment: item.taskIdForComment\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1904,
+        -736
+      ],
+      "id": "be85d85c-5aa3-474d-9fdc-8d49668d5687",
+      "name": "Filter Status Alert Data"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\n\nreturn [{\n  json: {\n    manualReviews: item.manualReviews,\n    manualReviewCount: item.manualReviewCount,\n    taskIdForComment: item.taskIdForComment\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2512,
+        -976
+      ],
+      "id": "cf37c6d6-5e4e-4080-9362-c19a3f1ac9c5",
+      "name": "Filter Manual Review Data"
+    },
+    {
+      "parameters": {
+        "amount": 3
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        3040,
+        -768
+      ],
+      "id": "91c4a878-fd1b-4531-8648-2fca34d6242d",
+      "name": "Wait1",
+      "webhookId": "b6a5de3e-0dac-42c1-a308-2181aa4c1d3e"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Get many tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get many tasks": {
+      "main": [
+        [
+          {
+            "node": "Normalize & UTC Handling",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize & UTC Handling": {
+      "main": [
+        [
+          {
+            "node": "AI HTTP Call",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge metadata and AI validation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI HTTP Call": {
+      "main": [
+        [
+          {
+            "node": "AI Response Validator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Response Validator": {
+      "main": [
+        [
+          {
+            "node": "Merge metadata and AI validation",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge metadata and AI validation": {
+      "main": [
+        [
+          {
+            "node": "Prepare ClickUp Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare ClickUp Payload": {
+      "main": [
+        [
+          {
+            "node": "Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [
+          {
+            "node": "Set a custom Field on a task",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get many tasks1": {
+      "main": [
+        [
+          {
+            "node": "Manual Review Detection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Review Detection": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Alerts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create a task": {
+      "main": [
+        [
+          {
+            "node": "Wait1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Review Email": {
+      "main": [
+        []
+      ]
+    },
+    "Manual review routing": {
+      "main": [
+        [
+          {
+            "node": "Create a task",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Status alert": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        []
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Get many tasks1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items1": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Loop Over Items1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set a custom Field on a task": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "STATUS ALERT": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Operation, do nothing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Alerts": {
+      "main": [
+        [
+          {
+            "node": "Split Alerts vs Manual Reviews",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Status alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Alerts vs Manual Reviews": {
+      "main": [
+        [
+          {
+            "node": "Filter Status Alert Data",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Filter Manual Review Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Status Alert Data": {
+      "main": [
+        [
+          {
+            "node": "STATUS ALERT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Manual Review Data": {
+      "main": [
+        [
+          {
+            "node": "Manual review routing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait1": {
+      "main": [
+        [
+          {
+            "node": "Manual Review Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "4132a8dc-9cf8-4eee-a04d-da4657abb0a6",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "c293a340bdbabd1df390917414bb9c6b0db7e8046e105ab036f76358f8358157"
+  },
+  "id": "ATmVM627zxcjG0cu",
+  "tags": []
+}
