@@ -1,6 +1,6 @@
 # [Project Name: AI-Powered Delivery Health & Operations Intelligence System]
 
-![Banner Image: Option 1 (Operational Command Center)](https://image_generation_placeholder_url)
+![Banner Image: Option 1 (Operational Command Center)](crebos banner.png)
 
 > A production-grade **n8n orchestration** system designed to monitor delivery health across multiple concurrent projects. By replacing gut-feel decisions with objective **AI diagnostics** and two-way **ClickUp synchronization**, this system provides a reliable, data-driven escalation path.
 
